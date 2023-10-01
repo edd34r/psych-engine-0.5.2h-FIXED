@@ -20,6 +20,7 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r21e
+        id: setup-ndk
 
       - name: Setup Java JDK
         uses: actions/setup-java@v2
@@ -56,11 +57,13 @@ jobs:
       - name: Create Version Tag
         run: echo "${{ github.run_id }}" > VERSION
 
+      - name: Define ANDROID_NDK_ROOT
+        run: echo "ANDROID_NDK_ROOT=${{ steps.setup-ndk.outputs.ndk-path }}" >> $GITHUB_ENV
+
       - name: Setup Lime
         run: |
           haxelib run lime setup -alias -y
           haxelib run lime config ANDROID_SDK $ANDROID_HOME
-          haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_HOME
           haxelib run lime config JAVA_HOME $JAVA_HOME
           haxelib run lime config ANDROID_SETUP true
           haxelib set lime 7.9.0 -y
@@ -68,7 +71,6 @@ jobs:
           haxelib set flixel 4.11.0 -y
           haxelib list
         env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
           ANDROID_HOME: ${{ env.ANDROID_HOME }}
           JAVA_HOME: ${{ env.JAVA_HOME }}
 
