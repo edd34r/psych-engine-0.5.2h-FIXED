@@ -19,8 +19,8 @@ jobs:
         uses: nttld/setup-ndk@main
         with:
           ndk-version: r21e
-      - name: Setup Java JDK
 
+      - name: Setup Java JDK
         uses: actions/setup-java@main
         with:
           distribution: 'zulu'
@@ -116,11 +116,3 @@ jobs:
             .haxelib/
             export/release/android/haxe/
             export/release/android/obj/
-          key: cache-android-build
-
-      - name: Upload Artifact
-        uses: actions/upload-artifact@main
-        with:
-          name: VS Miku Android Build
-          path: export/release/android/bin/app/build/outputs/apk/debug
-          if-no-files-found: warn
