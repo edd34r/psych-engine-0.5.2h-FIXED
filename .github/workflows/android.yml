@@ -25,10 +25,10 @@ jobs:
             %~/haxelib%
           key: ${{ runner.os }}-android
           
-      - name: Configurar servidor de espejo de haxelib
-        run: haxelib config haxelib https://lib.haxe.org  # Configura el servidor de espejo de haxelib
+      - name: Configure haxelib mirror
+        run: haxelib config haxelib https://lib.haxe.org  # Configure haxelib mirror
 
-      - name: Reintentar actualización de haxelib (con reintento)
+      - name: Retry haxelib update (with retries)
         run: |
           n=0
           until [ $n -ge 5 ]
@@ -43,7 +43,7 @@ jobs:
           
       - name: Setup Android SDK Tools
         uses: android-actions/setup-android@v2.0.2
-        
+
       - name: Setup Java JDK
         uses: actions/setup-java@v2.3.1
         with:
@@ -57,8 +57,8 @@ jobs:
       - name: Install Haxelib and Lime
         run: |
           haxelib setup ~/haxelib
-          haxelib --global update haxelib  # Actualiza haxelib
-          haxelib install lime  # Instala o actualiza lime
+          haxelib --global update haxelib  # Update haxelib
+          haxelib install lime  # Install or update lime
           haxelib install openfl
           haxelib install hxcpp > /dev/null
           haxelib --never install flixel
@@ -71,10 +71,15 @@ jobs:
           haxelib install flixel-tools
           haxelib install flixel-ui 
           haxelib install flixel-addons
-          haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex  # Reemplaza hscript con hscript-ex
-          haxelib git hxCodec https://github.com/polybiusproxy/hxcodec  # Agrega hxCodec
-          haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit  # Agrega linc_luajit
-          haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc  # Agrega discord_rpc
+          haxelib install hscript
+          haxelib git polymod https://github.com/MasterEric/polymod.git
+          haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit.git
+          haxelib git AndroidTools https://github.com/jigsaw-4277821/AndroidTools.git
+          haxelib git extension-webview https://github.com/jigsaw-4277821/extension-webview.git --quiet
+          haxelib git hxCodec https://github.com/polybiusproxy/hxcodec
+          haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit.git
+          haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex
+          haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc
           haxelib install hxcpp-debug-server
           haxelib list
           
