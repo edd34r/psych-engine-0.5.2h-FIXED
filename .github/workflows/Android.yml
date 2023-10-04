@@ -1,81 +1,83 @@
-# This is a basic workflow to help you get started with Actions
+name: Build and Deploy
 
-name: Build
-
-# Controls when the action will run.
 on:
-  # Triggers the workflow on push or pull request events but only for the master branch
   push:
-    branches: [ notweuz-main ]
+    branches:
+      - main
   pull_request:
-    branches: [ notweuz-main ]
-
-  # Allows you to run this workflow manually from the Actions tab
+    branches:
+      - main
   workflow_dispatch:
 
-# A workflow run is made up of one or more jobs that can run sequentially or in parallel
 jobs:
-  buildAndroid:
-    name: buildAndroid
+  buildAndDeploy:
     runs-on: ubuntu-latest
+    
     steps:
-      - name: Checkout
-        uses: actions/checkout@v2.3.1
-
-      - name: Setup Android NDK
-        uses: nttld/setup-ndk@v1
-        id: setup-ndk
+      - uses: actions/checkout@v2
+      
+      - name: Remove existing Docker images
+        run: docker rmi -f $(docker images -q)
+      
+      - name: Build Custom Docker Image
+        run: |
+          # Install Docker in GitHub Actions environment
+          sudo apt-get update
+          sudo apt-get -y install docker.io
+          
+          # Create a Dockerfile for your custom image
+          echo 'FROM ubuntu:latest' > Dockerfile
+          echo 'RUN apt-get update && apt-get -y install haxe' >> Dockerfile
+          echo 'RUN haxelib install lime openfl hxcpp flixel flixel-tools flixel-addons hscript polymod linc_luajit' >> Dockerfile
+          echo 'RUN haxelib git polymod https://github.com/MasterEric/polymod.git' >> Dockerfile
+          echo 'RUN haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit.git' >> Dockerfile
+          echo 'RUN haxelib git AndroidTools https://github.com/jigsaw-4277821/AndroidTools.git' >> Dockerfile
+          echo 'RUN haxelib git extension-webview https://github.com/jigsaw-4277821/extension-webview.git' >> Dockerfile
+          echo 'RUN haxelib git hxCodec https://github.com/polybiusproxy/hxcodec' >> Dockerfile
+          echo 'RUN haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex' >> Dockerfile
+          echo 'RUN haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc' >> Dockerfile
+          echo 'RUN haxelib install hxcpp-debug-server' >> Dockerfile
+          
+          # Build the Docker image
+          docker build -t custom-haxe-image .
+          
+          # Create a temporary container to extract necessary files
+          docker create --name extract-container custom-haxe-image
+          docker cp extract-container:/usr/lib/haxe /usr/lib/
+          docker rm extract-container
+        working-directory: ${{ github.workspace }}
+      
+      - name: Cache haxelib path
+        uses: actions/cache@v2
         with:
-          ndk-version: r21e
+          path: |
+            %~/haxelib%
+          key: ${{ runner.os }}-android
+          
+      - name: Configurar servidor de espejo de haxelib
+        run: haxelib config haxelib https://lib.haxe.org  # Configura el servidor de espejo de haxelib
+
+      - name: Setup Android SDK Tools
+        uses: android-actions/setup-android@v2.0.2
 
       - name: Setup Java JDK
-        uses: actions/setup-java@v1
+        uses: actions/setup-java@v2.3.1
         with:
-          java-version: 11
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v2
-
-      - name: Setup Haxe
-        uses: krdlab/setup-haxe@v1.1.5
+          distribution: 'zulu'
+          java-version: '11'
+        
+      - uses: nttld/setup-ndk@v1
         with:
-          haxe-version: 4.2.5
-
-      - name: Install Haxelib
-        run: |
-          haxelib setup ~/haxelib
-          haxelib install hxcpp > /dev/null
-          haxelib install lime
-          haxelib install openfl 9.0.2
-          haxelib --never install flixel 4.11.0
-          haxelib run lime setup flixel
-          haxelib install flixel-tools
-          haxelib install flixel-ui
-          haxelib install hscript
-          haxelib install flixel-addons
-          haxelib git tentools https://github.com/TentaRJ/tentools.git
-          haxelib git systools https://github.com/haya3218/systools
-          haxelib git polymod https://github.com/MasterEric/polymod.git
-          haxelib git linc_luajit https://github.com/majigsaw77/linc_luajit.git
-          haxelib git extension-androidtools https://github.com/majigsaw77/extension-androidtools.git
-          haxelib list
+          ndk-version: r15c
 
       - name: Create Version Tag
         run: echo "${{github.run_id}}" > VERSION
-
-      - name: Setup Lime
-        run: |
-          haxelib run lime setup -alias -y
-          haxelib run lime config ANDROID_SDK $ANDROID_HOME
-          haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_HOME
-          haxelib run lime config JAVA_HOME $JAVA_HOME
-          haxelib run lime config ANDROID_SETUP true
-        env:
-          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
-
       - name: Compile
-        run: haxelib run lime build android --app-version="4.0.0-${{ github.run_id}}"
-
+        run: |
+          # Use the custom Docker container image to compile
+          docker run -v $(pwd):/workspace custom-haxe-image haxelib run lime setup android
+          docker run -v $(pwd):/workspace custom-haxe-image haxelib run lime build android --app-version="4.0.0-${{ github.run_id}}"
+          
       - name: Publish Artifact
         uses: actions/upload-artifact@v2.2.4
         with:
