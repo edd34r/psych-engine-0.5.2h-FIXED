@@ -14,10 +14,34 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       
-      - uses: krdlab/setup-haxe@v1
-        with:
-          haxe-version: 4.2.4
+      - name: Build Custom Docker Image
+        run: |
+          # Install Docker in GitHub Actions environment
+          sudo apt-get update
+          sudo apt-get -y install docker.io
           
+          # Create a Dockerfile for your custom image
+          echo 'FROM ubuntu:latest' > Dockerfile
+          echo 'RUN apt-get update && apt-get -y install haxe' >> Dockerfile
+          echo 'RUN haxelib install lime openfl hxcpp flixel flixel-tools flixel-addons hscript polymod linc_luajit' >> Dockerfile
+          echo 'RUN haxelib git polymod https://github.com/MasterEric/polymod.git' >> Dockerfile
+          echo 'RUN haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit.git' >> Dockerfile
+          echo 'RUN haxelib git AndroidTools https://github.com/jigsaw-4277821/AndroidTools.git' >> Dockerfile
+          echo 'RUN haxelib git extension-webview https://github.com/jigsaw-4277821/extension-webview.git' >> Dockerfile
+          echo 'RUN haxelib git hxCodec https://github.com/polybiusproxy/hxcodec' >> Dockerfile
+          echo 'RUN haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex' >> Dockerfile
+          echo 'RUN haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc' >> Dockerfile
+          echo 'RUN haxelib install hxcpp-debug-server' >> Dockerfile
+          
+          # Build the Docker image
+          docker build -t mi-imagen-haxe:v1.0 .
+          
+          # Create a temporary container to extract necessary files
+          docker create --name extract-container mi-imagen-haxe:v1.0
+          docker cp extract-container:/usr/lib/haxe /usr/lib/
+          docker rm extract-container
+        working-directory: ${{ github.workspace }}
+      
       - name: Cache haxelib path
         uses: actions/cache@v2
         with:
@@ -41,40 +65,13 @@ jobs:
         with:
           ndk-version: r15c
 
-      - name: Install Haxelib and Lime
-        run: |
-          haxelib setup ~/haxelib
-          haxelib install lime  # Instala o actualiza lime
-          haxelib install openfl
-          haxelib install hxcpp > /dev/null
-          haxelib --never install flixel
-          haxelib run lime setup flixel
-          haxelib run lime setup
-          haxelib run lime config ANDROID_SDK $ANDROID_SDK_ROOT
-          haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_ROOT
-          haxelib run lime config JAVA_HOME $JAVA_HOME
-          haxelib run lime config ANDROID_SETUP true
-          haxelib install flixel-tools
-          haxelib install flixel-ui 
-          haxelib install flixel-addons
-          haxelib install hscript
-          haxelib git polymod https://github.com/MasterEric/polymod.git
-          haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit.git
-          haxelib git AndroidTools https://github.com/jigsaw-4277821/AndroidTools.git
-          haxelib git extension-webview https://github.com/jigsaw-4277821/extension-webview.git --quiet
-          haxelib git hxCodec https://github.com/polybiusproxy/hxcodec
-          haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit.git
-          haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex
-          haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc
-          haxelib install hxcpp-debug-server
-          haxelib list
-          
       - name: Create Version Tag
         run: echo "${{github.run_id}}" > VERSION
       - name: Compile
         run: |
-          haxelib run lime setup android
-          haxelib run lime build android --app-version="4.0.0-${{ github.run_id}}"
+          # Use the custom Docker container image to compile
+          docker run -v $(pwd):/workspace mi-imagen-haxe:v1.0 haxelib run lime setup android
+          docker run -v $(pwd):/workspace mi-imagen-haxe:v1.0 haxelib run lime build android --app-version="4.0.0-${{ github.run_id}}"
           
       - name: Publish Artifact
         uses: actions/upload-artifact@v2.2.4
