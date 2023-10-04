@@ -16,37 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v2
       
-      - name: Remove existing Docker images
-        run: docker rmi -f $(docker images -q)
-      
-      - name: Build Custom Docker Image
-        run: |
-          # Install Docker in GitHub Actions environment
-          sudo apt-get update
-          sudo apt-get -y install docker.io
+      - uses: krdlab/setup-haxe@v1
+        with:
+          haxe-version: 4.2.4
           
-          # Create a Dockerfile for your custom image
-          echo 'FROM ubuntu:latest' > Dockerfile
-          echo 'RUN apt-get update && apt-get -y install haxe' >> Dockerfile
-          echo 'RUN haxelib install lime openfl hxcpp flixel flixel-tools flixel-addons hscript polymod linc_luajit' >> Dockerfile
-          echo 'RUN haxelib git polymod https://github.com/MasterEric/polymod.git' >> Dockerfile
-          echo 'RUN haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit.git' >> Dockerfile
-          echo 'RUN haxelib git AndroidTools https://github.com/jigsaw-4277821/AndroidTools.git' >> Dockerfile
-          echo 'RUN haxelib git extension-webview https://github.com/jigsaw-4277821/extension-webview.git' >> Dockerfile
-          echo 'RUN haxelib git hxCodec https://github.com/polybiusproxy/hxcodec' >> Dockerfile
-          echo 'RUN haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex' >> Dockerfile
-          echo 'RUN haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc' >> Dockerfile
-          echo 'RUN haxelib install hxcpp-debug-server' >> Dockerfile
-          
-          # Build the Docker image
-          docker build -t custom-haxe-image .
-          
-          # Create a temporary container to extract necessary files
-          docker create --name extract-container custom-haxe-image
-          docker cp extract-container:/usr/lib/haxe /usr/lib/
-          docker rm extract-container
-        working-directory: ${{ github.workspace }}
-      
       - name: Cache haxelib path
         uses: actions/cache@v2
         with:
@@ -54,12 +27,28 @@ jobs:
             %~/haxelib%
           key: ${{ runner.os }}-android
           
+      - name: Limpiar caché de haxelib
+        run: haxelib clean  # Limpia la caché de haxelib
+      
       - name: Configurar servidor de espejo de haxelib
         run: haxelib config haxelib https://lib.haxe.org  # Configura el servidor de espejo de haxelib
 
+      - name: Reintentar actualización de haxelib (con reintento)
+        run: |
+          n=0
+          until [ $n -ge 5 ]
+          do
+              haxelib --global update haxelib
+              if [ $? -eq 0 ]; then
+                  break
+              fi
+              n=$[$n+1]
+              sleep 10
+          done
+          
       - name: Setup Android SDK Tools
         uses: android-actions/setup-android@v2.0.2
-
+        
       - name: Setup Java JDK
         uses: actions/setup-java@v2.3.1
         with:
@@ -70,13 +59,36 @@ jobs:
         with:
           ndk-version: r15c
 
+      - name: Install Haxelib and Lime
+        run: |
+          haxelib setup ~/haxelib
+          haxelib --global update haxelib  # Actualiza haxelib
+          haxelib install lime  # Instala o actualiza lime
+          haxelib install openfl
+          haxelib install hxcpp > /dev/null
+          haxelib --never install flixel
+          haxelib run lime setup flixel
+          haxelib run lime setup
+          haxelib run lime config ANDROID_SDK $ANDROID_SDK_ROOT
+          haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_ROOT
+          haxelib run lime config JAVA_HOME $JAVA_HOME
+          haxelib run lime config ANDROID_SETUP true
+          haxelib install flixel-tools
+          haxelib install flixel-ui 
+          haxelib install flixel-addons
+          haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex  # Reemplaza hscript con hscript-ex
+          haxelib git hxCodec https://github.com/polybiusproxy/hxcodec  # Agrega hxCodec
+          haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit  # Agrega linc_luajit
+          haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc  # Agrega discord_rpc
+          haxelib install hxcpp-debug-server
+          haxelib list
+          
       - name: Create Version Tag
         run: echo "${{github.run_id}}" > VERSION
       - name: Compile
         run: |
-          # Use the custom Docker container image to compile
-          docker run -v $(pwd):/workspace custom-haxe-image haxelib run lime setup android
-          docker run -v $(pwd):/workspace custom-haxe-image haxelib run lime build android --app-version="4.0.0-${{ github.run_id}}"
+          haxelib run lime setup android
+          haxelib run lime build android --app-version="4.0.0-${{ github.run_id}}"
           
       - name: Publish Artifact
         uses: actions/upload-artifact@v2.2.4
