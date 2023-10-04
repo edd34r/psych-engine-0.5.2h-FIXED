@@ -25,9 +25,6 @@ jobs:
             %~/haxelib%
           key: ${{ runner.os }}-android
           
-      - name: Limpiar caché de haxelib
-        run: haxelib clean  # Limpia la caché de haxelib
-      
       - name: Configurar servidor de espejo de haxelib
         run: haxelib config haxelib https://lib.haxe.org  # Configura el servidor de espejo de haxelib
 
