@@ -62,6 +62,9 @@ jobs:
           haxelib install hxcpp-debug-server
           haxelib list
 
+      - name: Install extension-androidtools
+        run: haxelib install extension-androidtools
+
       - name: Configure Android
         run: |
           haxelib run lime setup -alias -y
