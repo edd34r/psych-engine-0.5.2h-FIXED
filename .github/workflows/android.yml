@@ -1,80 +1,153 @@
-name: Build
-
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-  workflow_dispatch:
-
+name: Mobile + Release
+on: workflow_dispatch
 jobs:
-  buildAndroid:
+  Android:
     runs-on: ubuntu-latest
-    
+    strategy:
+      matrix:
+        storage-type: [EXTERNAL, OBB, DATA, MEDIA]
     steps:
-      - uses: actions/checkout@v2
-      
-      - name: Build Custom Docker Image
-        run: |
-          # Install Docker in GitHub Actions environment
-          sudo apt-get update
-          sudo apt-get -y install docker.io
-          
-          # Create a Dockerfile for your custom image
-          echo 'FROM ubuntu:latest' > Dockerfile
-          echo 'RUN apt-get update && apt-get -y install haxe' >> Dockerfile
-          echo 'RUN haxelib install lime openfl hxcpp flixel flixel-tools flixel-addons hscript polymod linc_luajit' >> Dockerfile
-          echo 'RUN haxelib git polymod https://github.com/MasterEric/polymod.git' >> Dockerfile
-          echo 'RUN haxelib git linc_luajit https://github.com/nebulazorua/linc_luajit.git' >> Dockerfile
-          echo 'RUN haxelib git AndroidTools https://github.com/jigsaw-4277821/AndroidTools.git' >> Dockerfile
-          echo 'RUN haxelib git extension-webview https://github.com/jigsaw-4277821/extension-webview.git' >> Dockerfile
-          echo 'RUN haxelib git hxCodec https://github.com/polybiusproxy/hxcodec' >> Dockerfile
-          echo 'RUN haxelib git hscript-ex https://github.com/ianharrigan/hscript-ex' >> Dockerfile
-          echo 'RUN haxelib git discord_rpc https://github.com/Aidan63/linc_discord-rpc' >> Dockerfile
-          echo 'RUN haxelib install hxcpp-debug-server' >> Dockerfile
-          
-          # Build the Docker image
-          docker build -t mi-imagen-haxe:v1.0 .
-          
-          # Create a temporary container to extract necessary files
-          docker create --name extract-container mi-imagen-haxe:v1.0
-          docker cp extract-container:/usr/lib/haxe /usr/lib/
-          docker rm extract-container
-        working-directory: ${{ github.workspace }}
-      
-      - name: Cache haxelib path
-        uses: actions/cache@v2
-        with:
-          path: |
-            %~/haxelib%
-          key: ${{ runner.os }}-android
-          
-      - name: Configurar servidor de espejo de haxelib
-        run: haxelib config haxelib https://lib.haxe.org  # Configura el servidor de espejo de haxelib
+      - name: Checkout
+        uses: actions/checkout@main
 
-      - name: Setup Android SDK Tools
-        uses: android-actions/setup-android@v2.0.2
+      - name: Setup Android NDK
+        uses: nttld/setup-ndk@main
+        id: setup-ndk
+        with:
+          ndk-version: r21e
 
       - name: Setup Java JDK
-        uses: actions/setup-java@v2.3.1
+        uses: actions/setup-java@main
         with:
-          distribution: 'zulu'
-          java-version: '11'
-        
-      - uses: nttld/setup-ndk@v1
-        with:
-          ndk-version: r15c
+          distribution: 'temurin'
+          java-version: '17'
 
-      - name: Create Version Tag
-        run: echo "${{github.run_id}}" > VERSION
-      - name: Compile
-        run: |
-          # Use the custom Docker container image to compile
-          docker run -v $(pwd):/workspace mi-imagen-haxe:v1.0 haxelib run lime setup android
-          docker run -v $(pwd):/workspace mi-imagen-haxe:v1.0 haxelib run lime build android --app-version="4.0.0-${{ github.run_id}}"
-          
-      - name: Publish Artifact
-        uses: actions/upload-artifact@v2.2.4
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@master
         with:
-          name: androidBuild
-          path: export/release/android/bin/app/build/outputs/apk/debug
+          haxe-version: 4.3.3
+
+      - name: Install Libraries
+        run: |
+          haxelib setup ~/haxelib
+          haxelib install hmm --quiet
+          haxelib run hmm install --quiet
+
+      - name: Configure Android
+        run: |
+          haxelib run lime config ANDROID_SDK $ANDROID_HOME
+          haxelib run lime config ANDROID_NDK_ROOT $ANDROID_NDK_HOME
+          haxelib run lime config JAVA_HOME $JAVA_HOME
+          haxelib run lime config ANDROID_SETUP true
+        env:
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+
+      - name: Compile
+        run: haxelib run lime build android -D officialBuild -D ${{ matrix.storage-type }} -final
+        env:
+          cert_pass: nullfunni
+          cert_alias_pass: nullfunni
+
+      - name: Upload Artifact
+        if: ${{ success() }}
+        uses: actions/upload-artifact@main
+        with:
+          name: androidBuild-${{ matrix.storage-type }}
+          path: export/release/android/bin/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+  iOS:
+    runs-on: macos-13
+    steps:
+      - name: Checkout
+        uses: actions/checkout@main
+
+      - name: Setup Haxe
+        uses: krdlab/setup-haxe@master
+        with:
+          haxe-version: 4.3.3
+
+      - name: Install Libraries
+        run: |
+          haxelib setup ~/haxelib
+          haxelib install hmm --quiet
+          haxelib run hmm install --quiet
+
+      - name: Compile
+        run: haxelib run lime build ios -D NOVIDEO -D officialBuild -final
+
+      - name: Make Ipa
+        run: |
+          cd export/release/ios/build/Release-iphoneos
+          mkdir Payload
+          mv *.app Payload
+          zip -r PsychEngine.ipa Payload
+
+      - name: Make Zip For Release
+        run: |
+           cd export/release/ios/build/Release-iphoneos
+           zip PsychEngine-iOS.zip PsychEngine.ipa
+
+      - name: Upload Artifact
+        if: ${{ success() }}
+        uses: actions/upload-artifact@main
+        with:
+          name: iOSBuild
+          path: export/release/ios/build/Release-iphoneos/*.zip
+          if-no-files-found: error
+  Releaser:
+    needs: [Android, iOS]
+    runs-on: ubuntu-latest
+    permissions: write-all
+    steps:
+      - name: Download EXTERNAL Build
+        uses: actions/download-artifact@main
+        with:
+           name: androidBuild-EXTERNAL
+           path: /home/runner
+
+      - name: Move EXTERNAL File
+        run: mv /home/runner/PsychEngine-release.apk /home/runner/PsychEngine-EXTERNAL.apk
+
+      - name: Download OBB Build
+        uses: actions/download-artifact@main
+        with:
+           name: androidBuild-OBB
+           path: /home/runner
+
+      - name: Move OBB File
+        run: mv /home/runner/PsychEngine-release.apk /home/runner/PsychEngine-OBB.apk
+
+      - name: Download DATA Build
+        uses: actions/download-artifact@main
+        with:
+           name: androidBuild-DATA
+           path: /home/runner
+
+      - name: Move DATA File
+        run: mv /home/runner/PsychEngine-release.apk /home/runner/PsychEngine-DATA.apk
+
+      - name: Download MEDIA Build
+        uses: actions/download-artifact@main
+        with:
+           name: androidBuild-MEDIA
+           path: /home/runner
+
+      - name: Move MEDIA File
+        run: mv /home/runner/PsychEngine-release.apk /home/runner/PsychEngine-MEDIA.apk
+
+      - name: Download iOS Build
+        uses: actions/download-artifact@main
+        with:
+           name: iOSBuild
+           path: /home/runner
+
+      - name: Publish The Release
+        uses: marvinpinto/action-automatic-releases@latest
+        with:
+          repo_token: "${{ secrets.GITHUB_TOKEN }}"
+          prerelease: false
+          automatic_release_tag: "0.7.3"
+          title: "0.7.3"
+          files: |
+            /home/runner/*.apk
+            /home/runner/*.zip
